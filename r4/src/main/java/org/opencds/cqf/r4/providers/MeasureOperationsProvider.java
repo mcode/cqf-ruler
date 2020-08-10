@@ -1,31 +1,16 @@
 package org.opencds.cqf.r4.providers;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import javax.servlet.http.HttpServletRequest;
 
+import ca.uhn.fhir.jpa.dao.IFhirResourceDao;
+import ca.uhn.fhir.rest.annotation.*;
 import org.hl7.fhir.exceptions.FHIRException;
 import org.hl7.fhir.instance.model.api.IAnyResource;
 import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseResource;
-import org.hl7.fhir.r4.model.Bundle;
-import org.hl7.fhir.r4.model.CodeableConcept;
-import org.hl7.fhir.r4.model.Coding;
-import org.hl7.fhir.r4.model.Composition;
-import org.hl7.fhir.r4.model.Extension;
-import org.hl7.fhir.r4.model.IdType;
-import org.hl7.fhir.r4.model.ListResource;
-import org.hl7.fhir.r4.model.Measure;
-import org.hl7.fhir.r4.model.MeasureReport;
-import org.hl7.fhir.r4.model.Narrative;
-import org.hl7.fhir.r4.model.Parameters;
-import org.hl7.fhir.r4.model.Reference;
-import org.hl7.fhir.r4.model.RelatedArtifact;
-import org.hl7.fhir.r4.model.Resource;
-import org.hl7.fhir.r4.model.StringType;
+import org.hl7.fhir.r4.model.*;
 import org.hl7.fhir.utilities.xhtml.XhtmlNode;
 import org.opencds.cqf.common.evaluation.EvaluationProviderFactory;
 import org.opencds.cqf.common.providers.LibraryResolutionProvider;
@@ -43,9 +28,6 @@ import ca.uhn.fhir.jpa.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.dao.IFhirSystemDao;
 import ca.uhn.fhir.jpa.rp.r4.MeasureResourceProvider;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
-import ca.uhn.fhir.rest.annotation.IdParam;
-import ca.uhn.fhir.rest.annotation.Operation;
-import ca.uhn.fhir.rest.annotation.OperationParam;
 import ca.uhn.fhir.rest.api.MethodOutcome;
 import ca.uhn.fhir.rest.api.RestOperationTypeEnum;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
@@ -234,52 +216,95 @@ public class MeasureOperationsProvider {
     // }
 
     @Operation(name = "$care-gaps", idempotent = true, type = Measure.class)
-    public Bundle careGapsReport(@OperationParam(name = "periodStart") String periodStart,
-            @OperationParam(name = "periodEnd") String periodEnd, @OperationParam(name = "topic") String topic,
-            @OperationParam(name = "patient") String patientRef) {
-        List<IBaseResource> measures = this.measureResourceProvider.getDao().search(new SearchParameterMap()
-                .add("topic", new TokenParam().setModifier(TokenParamModifier.TEXT).setValue(topic)))
-                .getResources(0, 1000);
+    public Parameters careGapsReport(@RequiredParam(name = "periodStart") String periodStart,
+                                     @RequiredParam(name = "periodEnd") String periodEnd, @OptionalParam(name = "subject") String subject,
+                                     @OptionalParam(name = "subjectGroup") String subjectGroup, @OptionalParam(name = "topic") String topic,
+                                     @OptionalParam(name = "practitioner") String practitionerRef) {
+
+        // TODO: topic should allow many
+
+        if(null != subjectGroup && subjectGroup.length() > 0){
+            //TODO - should we add practitionerRef to this loop??
+            Parameters returnParams = new Parameters();
+            //TODO - need to ID separator
+            for(String subjectName: subjectGroup.split(",")){
+                returnParams.addParameter(new Parameters.ParametersParameterComponent()
+                        .setName("Gaps in Care Report - " + subjectName)
+                        .setResource(patientCareGap(periodStart, periodEnd, subjectName, topic)));
+            }
+            return returnParams;
+        }
+        if (practitionerRef == null || practitionerRef.equals("")) {
+            return new Parameters().addParameter(
+                new Parameters.ParametersParameterComponent()
+                    .setName("Gaps in Care Report - " + subject)
+                    .setResource(patientCareGap(periodStart, periodEnd, subject, topic)));
+        }
+
+
+
+        Parameters parameters = new Parameters();
+
+        return parameters;
+    }
+
+    private Bundle patientCareGap(String periodStart, String periodEnd, String subject, String topic) {
+        if (subject == null || subject.equals("")) {
+            throw new IllegalArgumentException("Subject is required.");
+        }
+
+        //TODO: this is an org hack.  Need to figure out what the right thing is.
+        IFhirResourceDao<Organization> orgDao = this.registry.getResourceDao(Organization.class);
+        var org = orgDao.search(new SearchParameterMap()).getResources(0, 1);
+
+        SearchParameterMap theParams = new SearchParameterMap();
+
+        // if (theId != null) {
+        //     var measureParam = new StringParam(theId.getIdPart());
+        //     theParams.add("_id", measureParam);
+        // }
+
+        if (topic != null && !topic.equals("")) {
+            var topicParam = new TokenParam(topic);
+            theParams.add("topic", topicParam);
+        }
+
+        List<IBaseResource> measures =  this.measureResourceProvider.getDao().search(theParams).getResources(0, 1000);
+
         Bundle careGapReport = new Bundle();
         careGapReport.setType(Bundle.BundleType.DOCUMENT);
 
         Composition composition = new Composition();
-        // TODO - this is a placeholder code for now ... replace with preferred code
-        // once identified
-        CodeableConcept typeCode = new CodeableConcept()
-                .addCoding(new Coding().setSystem("http://loinc.org").setCode("57024-2"));
-        composition.setStatus(Composition.CompositionStatus.FINAL).setType(typeCode)
-                .setSubject(new Reference(patientRef.startsWith("Patient/") ? patientRef : "Patient/" + patientRef))
-                .setTitle(topic + " Care Gap Report");
+        composition.setStatus(Composition.CompositionStatus.FINAL)
+                .setSubject(new Reference(subject.startsWith("Patient/") ? subject : "Patient/" + subject))
+                .setTitle("Care Gap Report");
 
         List<MeasureReport> reports = new ArrayList<>();
-        MeasureReport report = new MeasureReport();
+        List<DetectedIssue> detectedIssues = new ArrayList<DetectedIssue>();
+        MeasureReport report = null;
+
         for (IBaseResource resource : measures) {
-            Composition.SectionComponent section = new Composition.SectionComponent();
 
             Measure measure = (Measure) resource;
-            section.addEntry(
-                    new Reference(measure.getIdElement().getResourceType() + "/" + measure.getIdElement().getIdPart()));
+            Composition.SectionComponent section = new Composition.SectionComponent();
+
             if (measure.hasTitle()) {
                 section.setTitle(measure.getTitle());
             }
-            CodeableConcept improvementNotation = new CodeableConcept().addCoding(new Coding().setCode("increase")
-                    .setSystem("http://terminology.hl7.org/CodeSystem/measure-improvement-notation")); // defaulting to
-                                                                                                       // "increase"
-            if (measure.hasImprovementNotation()) {
-                improvementNotation = measure.getImprovementNotation();
-                section.setText(new Narrative().setStatus(Narrative.NarrativeStatus.GENERATED)
-                        .setDiv(new XhtmlNode().setValue(improvementNotation.getCodingFirstRep().getCode())));
-            }
 
-            LibraryLoader libraryLoader = LibraryHelper.createLibraryLoader(this.libraryResolutionProvider);
-            MeasureEvaluationSeed seed = new MeasureEvaluationSeed(this.factory, libraryLoader,
-                    this.libraryResolutionProvider);
-            seed.setup(measure, periodStart, periodEnd, null, null, null, null);
-            MeasureEvaluation evaluator = new MeasureEvaluation(seed.getDataProvider(), this.registry,
-                    seed.getMeasurementPeriod());
             // TODO - this is configured for patient-level evaluation only
-            report = evaluator.evaluatePatientMeasure(seed.getMeasure(), seed.getContext(), patientRef);
+            report = evaluateMeasure(measure.getIdElement(), periodStart, periodEnd, null, null, subject, null,
+            null, null, null, null, null);
+
+            report.setId(UUID.randomUUID().toString());
+            report.setDate(new Date());
+            report.setImprovementNotation(measure.getImprovementNotation());
+            //TODO: this is an org hack
+            report.setReporter(new Reference("Organization/" + org.get(0).getIdElement().getIdPart()));
+            report.setMeta(new Meta().addProfile("http://hl7.org/fhir/us/davinci-deqm/StructureDefinition/indv-measurereport-deqm"));
+            section.setFocus(new Reference("MeasureReport/" + report.getId()));
+            //TODO: DetectedIssue
+            //section.addEntry(new Reference("MeasureReport/" + report.getId()));
 
             if (report.hasGroup() && measure.hasScoring()) {
                 int numerator = 0;
@@ -307,27 +332,41 @@ public class MeasureOperationsProvider {
                     }
                 }
 
+                //TODO: implement this per the spec
+                //Holding off on implementiation using Measure Score pending guidance re consideration for programs that don't perform the calculation (they just use numer/denom)
                 double proportion = 0.0;
                 if (measure.getScoring().hasCoding() && denominator != 0) {
                     for (Coding coding : measure.getScoring().getCoding()) {
                         if (coding.hasCode() && coding.getCode().equals("proportion")) {
-                            proportion = numerator / denominator;
+                            if (denominator != 0.0 ) {
+                                proportion = numerator / denominator;
+                            }
                         }
                     }
                 }
 
                 // TODO - this is super hacky ... change once improvementNotation is specified
                 // as a code
-                if (improvementNotation.getCodingFirstRep().getCode().toLowerCase().equals("increase")) {
-                    if (proportion < 1.0) {
+                String improvementNotation = measure.getImprovementNotation().getCodingFirstRep().getCode().toLowerCase();
+                if (
+                    ((improvementNotation.equals("increase")) && (proportion < 1.0))
+                        ||  ((improvementNotation.equals("decrease")) && (proportion > 0.0))) {
+
+                        DetectedIssue detectedIssue = new DetectedIssue();
+                        detectedIssue.setId(UUID.randomUUID().toString());
+                        detectedIssue.setStatus(DetectedIssue.DetectedIssueStatus.FINAL);
+                        detectedIssue.setPatient(new Reference(subject.startsWith("Patient/") ? subject : "Patient/" + subject));
+                        detectedIssue.getEvidence().add(new DetectedIssue.DetectedIssueEvidenceComponent().addDetail(new Reference("MeasureReport/" + report.getId())));
+                        CodeableConcept code = new CodeableConcept()
+                            .addCoding(new Coding().setSystem("http://hl7.org/fhir/us/davinci-deqm/CodeSystem/detectedissue-category").setCode("care-gap"));
+                        detectedIssue.setCode(code);
+
+                        section.addEntry(
+                             new Reference("DetectedIssue/" + detectedIssue.getIdElement().getIdPart()));
                         composition.addSection(section);
+
+                        detectedIssues.add(detectedIssue);
                         reports.add(report);
-                    }
-                } else if (improvementNotation.getCodingFirstRep().getCode().toLowerCase().equals("decrease")) {
-                    if (proportion > 0.0) {
-                        composition.addSection(section);
-                        reports.add(report);
-                    }
                 }
 
                 // TODO - add other types of improvement notation cases
@@ -338,6 +377,10 @@ public class MeasureOperationsProvider {
 
         for (MeasureReport rep : reports) {
             careGapReport.addEntry(new Bundle.BundleEntryComponent().setResource(rep));
+        }
+
+        for (DetectedIssue detectedIssue: detectedIssues) {
+            careGapReport.addEntry(new Bundle.BundleEntryComponent().setResource(detectedIssue));
         }
 
         return careGapReport;
