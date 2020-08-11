@@ -219,7 +219,8 @@ public class MeasureOperationsProvider {
     public Parameters careGapsReport(@RequiredParam(name = "periodStart") String periodStart,
                                      @RequiredParam(name = "periodEnd") String periodEnd, @OptionalParam(name = "subject") String subject,
                                      @OptionalParam(name = "subjectGroup") String subjectGroup, @OptionalParam(name = "topic") String topic,
-                                     @OptionalParam(name = "practitioner") String practitionerRef) {
+                                     @OptionalParam(name = "practitioner") String practitionerRef, @OptionalParam(name = "measureName") String measureName,
+                                     @OptionalParam(name = "measureList") String measureList) {
 
         // TODO: topic should allow many
 
@@ -230,7 +231,7 @@ public class MeasureOperationsProvider {
             for(String subjectName: subjectGroup.split(",")){
                 returnParams.addParameter(new Parameters.ParametersParameterComponent()
                         .setName("Gaps in Care Report - " + subjectName)
-                        .setResource(patientCareGap(periodStart, periodEnd, subjectName, topic)));
+                        .setResource(patientCareGap(periodStart, periodEnd, subjectName, topic, measureName, measureList)));
             }
             return returnParams;
         }
@@ -238,7 +239,7 @@ public class MeasureOperationsProvider {
             return new Parameters().addParameter(
                 new Parameters.ParametersParameterComponent()
                     .setName("Gaps in Care Report - " + subject)
-                    .setResource(patientCareGap(periodStart, periodEnd, subject, topic)));
+                    .setResource(patientCareGap(periodStart, periodEnd, subject, topic, measureName, measureList)));
         }
 
 
@@ -248,7 +249,7 @@ public class MeasureOperationsProvider {
         return parameters;
     }
 
-    private Bundle patientCareGap(String periodStart, String periodEnd, String subject, String topic) {
+    private Bundle patientCareGap(String periodStart, String periodEnd, String subject, String topic, String measureName, String measureList) {
         if (subject == null || subject.equals("")) {
             throw new IllegalArgumentException("Subject is required.");
         }
@@ -268,8 +269,7 @@ public class MeasureOperationsProvider {
             var topicParam = new TokenParam(topic);
             theParams.add("topic", topicParam);
         }
-
-        List<IBaseResource> measures =  this.measureResourceProvider.getDao().search(theParams).getResources(0, 1000);
+        List<IBaseResource> measures = getMeasureList(theParams, measureName, measureList);
 
         Bundle careGapReport = new Bundle();
         careGapReport.setType(Bundle.BundleType.DOCUMENT);
@@ -384,6 +384,21 @@ public class MeasureOperationsProvider {
         }
 
         return careGapReport;
+    }
+
+    private List<IBaseResource> getMeasureList(SearchParameterMap theParams, String measureName, String measureList){
+        if(null != measureName && measureName.length() > 0){
+            return this.measureResourceProvider.getDao().search(theParams).getResources(0, 1000);//.stream().map()
+        }else if(null != measureList && measureList.length() > 0){
+            for(String measure: measureList.split(",")){
+                List<IBaseResource> measures;
+                measures = this.measureResourceProvider.getDao().search(theParams).getResources(0, 1000);//.stream().map()
+                return measures;
+            }
+        }else {
+            return this.measureResourceProvider.getDao().search(theParams).getResources(0, 1000);
+        }
+        return null;
     }
 
     @Operation(name = "$collect-data", idempotent = true, type = Measure.class)
