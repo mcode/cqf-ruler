@@ -1,6 +1,7 @@
 package org.opencds.cqf.r4.providers;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -216,11 +217,11 @@ public class MeasureOperationsProvider {
     // }
 
     @Operation(name = "$care-gaps", idempotent = true, type = Measure.class)
-    public Parameters careGapsReport(@RequiredParam(name = "periodStart") String periodStart,
-                                     @RequiredParam(name = "periodEnd") String periodEnd, @OptionalParam(name = "subject") String subject,
-                                     @OptionalParam(name = "subjectGroup") String subjectGroup, @OptionalParam(name = "topic") String topic,
-                                     @OptionalParam(name = "practitioner") String practitionerRef, @OptionalParam(name = "measureName") String measureName,
-                                     @OptionalParam(name = "measureList") String measureList) {
+    public Parameters careGapsReport(@OperationParam(name = "periodStart") String periodStart,
+                                     @OperationParam(name = "periodEnd") String periodEnd, @OperationParam(name = "subject") String subject,
+                                     @OperationParam(name = "subjectGroup") String subjectGroup, @OperationParam(name = "topic") String topic,
+                                     @OperationParam(name = "practitioner") String practitionerRef, @OperationParam(name = "measureName") String measureName,
+                                     @OperationParam(name = "measureList") String measureList) {
 
         // TODO: topic should allow many
 
@@ -293,13 +294,13 @@ public class MeasureOperationsProvider {
             }
 
             // TODO - this is configured for patient-level evaluation only
-            report = evaluateMeasure(measure.getIdElement(), periodStart, periodEnd, null, null, subject, null,
+            report = evaluateMeasure(measure.getIdElement(), periodStart, periodEnd, null, "patient", subject, null,
             null, null, null, null, null);
 
             report.setId(UUID.randomUUID().toString());
             report.setDate(new Date());
             report.setImprovementNotation(measure.getImprovementNotation());
-            //TODO: this is an org hack
+            //TODO: this is an org hack && requires an Organization to be in the ruler
             report.setReporter(new Reference("Organization/" + org.get(0).getIdElement().getIdPart()));
             report.setMeta(new Meta().addProfile("http://hl7.org/fhir/us/davinci-deqm/StructureDefinition/indv-measurereport-deqm"));
             section.setFocus(new Reference("MeasureReport/" + report.getId()));
@@ -388,17 +389,32 @@ public class MeasureOperationsProvider {
 
     private List<IBaseResource> getMeasureList(SearchParameterMap theParams, String measureName, String measureList){
         if(null != measureName && measureName.length() > 0){
-            return this.measureResourceProvider.getDao().search(theParams).getResources(0, 1000);//.stream().map()
+            return this.measureResourceProvider
+                    .getDao()
+                    .search(theParams)
+                    .getResources(0, 1000)
+                    .stream()
+                    .filter(m -> ((Measure)m)
+                            .getName()
+                            .equalsIgnoreCase(measureName))
+                    .collect(Collectors.toList());
         }else if(null != measureList && measureList.length() > 0){
-            for(String measure: measureList.split(",")){
-                List<IBaseResource> measures;
-                measures = this.measureResourceProvider.getDao().search(theParams).getResources(0, 1000);//.stream().map()
-                return measures;
+            List<IBaseResource> finalMeasureList = new ArrayList<>();
+            List<IBaseResource> allMeasures = this.measureResourceProvider
+                    .getDao()
+                    .search(theParams)
+                    .getResources(0, 1000);
+            for(String singleName: measureList.split(",")){
+                allMeasures.forEach(measure -> {
+                    if(((Measure)measure).getName().equalsIgnoreCase(singleName.trim())) {
+                        finalMeasureList.add(measure);
+                    }
+                });
             }
+            return finalMeasureList;
         }else {
             return this.measureResourceProvider.getDao().search(theParams).getResources(0, 1000);
         }
-        return null;
     }
 
     @Operation(name = "$collect-data", idempotent = true, type = Measure.class)
