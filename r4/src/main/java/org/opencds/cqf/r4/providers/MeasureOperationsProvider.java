@@ -4,8 +4,10 @@ import java.util.*;
 
 import javax.servlet.http.HttpServletRequest;
 
+import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.jpa.dao.IFhirResourceDao;
 import ca.uhn.fhir.rest.annotation.*;
+import ca.uhn.fhir.rest.client.api.IGenericClient;
 import org.hl7.fhir.exceptions.FHIRException;
 import org.hl7.fhir.instance.model.api.IAnyResource;
 import org.hl7.fhir.instance.model.api.IBase;
@@ -13,6 +15,7 @@ import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.*;
 import org.opencds.cqf.common.evaluation.EvaluationProviderFactory;
 import org.opencds.cqf.common.providers.LibraryResolutionProvider;
+import org.opencds.cqf.cql.engine.data.DataProvider;
 import org.opencds.cqf.cql.engine.execution.LibraryLoader;
 import org.opencds.cqf.library.r4.NarrativeProvider;
 import org.opencds.cqf.measure.r4.CqfMeasure;
@@ -32,6 +35,8 @@ import ca.uhn.fhir.rest.api.RestOperationTypeEnum;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
 import ca.uhn.fhir.rest.param.TokenParam;
 import ca.uhn.fhir.rest.server.exceptions.InternalErrorException;
+
+import static org.opencds.cqf.common.helpers.ClientHelper.getClient;
 
 public class MeasureOperationsProvider {
 
@@ -218,27 +223,45 @@ public class MeasureOperationsProvider {
                                      @OperationParam(name = "periodEnd") String periodEnd, @OperationParam(name = "subject") String subject,
                                      @OperationParam(name = "topic") String topic,@OperationParam(name = "practitioner") String practitioner,
                                      @OperationParam(name = "measure") String measure){
-
+        //TODO: status - optional if null all gaps - if closed-gap code only those gaps that are closed if open-gap code only those that are open
+        //TODO: topic should allow many and be a union of them
+        //TODO: "The Server needs to make sure that practitioner is authorized to get the gaps in care report for and know what measures the practitioner are eligible or qualified."
+        Parameters returnParams = new Parameters();
         if(careGapParameterValidation(periodStart, periodEnd, subject, topic, practitioner, measure)) {
-            // TODO: topic should allow many and be a union of them
-            if (null != subject && subject.length() > 0) {
-                Parameters returnParams = new Parameters();
-                for (String subjectName : subject.split(",")) {
-                    returnParams.addParameter(new Parameters.ParametersParameterComponent()
-                            .setName("Gaps in Care Report - " + subjectName)
-                            .setResource(patientCareGap(periodStart, periodEnd, subjectName, topic, measure)));
-                }
+            if(subject.startsWith("Patient/")){
+                returnParams.addParameter(new Parameters.ParametersParameterComponent()
+                        .setName("Gaps in Care Report - " + subject)
+                        .setResource(patientCareGap(periodStart, periodEnd, subject, topic, measure)));
                 return returnParams;
+            }else if(subject.startsWith("Group/")) {
+                (getPatientListFromGroup(subject))
+                    .forEach(groupSubject -> returnParams.addParameter(new Parameters.ParametersParameterComponent()
+                    .setName("Gaps in Care Report - " + groupSubject)
+                    .setResource(patientCareGap(periodStart, periodEnd, groupSubject, topic, measure))));
             }
-            if (practitioner == null || practitioner.equals("")) {
-                return new Parameters().addParameter(
-                        new Parameters.ParametersParameterComponent()
-                                .setName("Gaps in Care Report - " + subject)
-                                .setResource(patientCareGap(periodStart, periodEnd, subject, topic, measure)));
-            }
+            return returnParams;
         }
-        Parameters parameters = new Parameters();
-        return parameters;
+        if (practitioner == null || practitioner.equals("")) {
+            return new Parameters().addParameter(
+                    new Parameters.ParametersParameterComponent()
+                            .setName("Gaps in Care Report - " + subject)
+                            .setResource(patientCareGap(periodStart, periodEnd, subject, topic, measure)));
+        }
+        return returnParams;
+    }
+
+    private List<String> getPatientListFromGroup(String subjectGroupRef){
+        List<String> patientList = new ArrayList<>();
+
+        DataProvider dataProvider = this.factory.createDataProvider("FHIR", "4");
+        Iterable<Object> groupRetrieve = dataProvider.retrieve("Group", "id", subjectGroupRef, "Group", null, null, null,
+                null, null, null, null, null);
+        Group group;
+        if (groupRetrieve.iterator().hasNext()) {
+            group = (Group) groupRetrieve.iterator().next();
+            group.getMember().forEach(member -> patientList.add(member.getEntity().getReference()));
+        }
+        return patientList;
     }
 
     private Boolean careGapParameterValidation(String periodStart, String periodEnd, String subject, String topic,
