@@ -1,7 +1,6 @@
 package org.opencds.cqf.r4.providers;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -12,7 +11,6 @@ import org.hl7.fhir.instance.model.api.IAnyResource;
 import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.*;
-import org.hl7.fhir.utilities.xhtml.XhtmlNode;
 import org.opencds.cqf.common.evaluation.EvaluationProviderFactory;
 import org.opencds.cqf.common.providers.LibraryResolutionProvider;
 import org.opencds.cqf.cql.engine.execution.LibraryLoader;
@@ -33,7 +31,6 @@ import ca.uhn.fhir.rest.api.MethodOutcome;
 import ca.uhn.fhir.rest.api.RestOperationTypeEnum;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
 import ca.uhn.fhir.rest.param.TokenParam;
-import ca.uhn.fhir.rest.param.TokenParamModifier;
 import ca.uhn.fhir.rest.server.exceptions.InternalErrorException;
 
 public class MeasureOperationsProvider {
@@ -219,42 +216,47 @@ public class MeasureOperationsProvider {
     @Operation(name = "$care-gaps", idempotent = true, type = Measure.class)
     public Parameters careGapsReport(@OperationParam(name = "periodStart") String periodStart,
                                      @OperationParam(name = "periodEnd") String periodEnd, @OperationParam(name = "subject") String subject,
-                                     @OperationParam(name = "subjectGroup") String subjectGroup, @OperationParam(name = "topic") String topic,
-                                     @OperationParam(name = "practitioner") String practitionerRef, @OperationParam(name = "measureName") String measureName,
-                                     @OperationParam(name = "measureList") String measureList) {
+                                     @OperationParam(name = "topic") String topic,@OperationParam(name = "practitioner") String practitioner,
+                                     @OperationParam(name = "measure") String measure){
 
-        // TODO: topic should allow many
-
-        if(null != subjectGroup && subjectGroup.length() > 0){
-            //TODO - should we add practitionerRef to this loop??
-            Parameters returnParams = new Parameters();
-            //TODO - need to ID separator
-            for(String subjectName: subjectGroup.split(",")){
-                returnParams.addParameter(new Parameters.ParametersParameterComponent()
-                        .setName("Gaps in Care Report - " + subjectName)
-                        .setResource(patientCareGap(periodStart, periodEnd, subjectName, topic, measureName, measureList)));
+        if(careGapParameterValidation(periodStart, periodEnd, subject, topic, practitioner, measure)) {
+            // TODO: topic should allow many and be a union of them
+            if (null != subject && subject.length() > 0) {
+                Parameters returnParams = new Parameters();
+                for (String subjectName : subject.split(",")) {
+                    returnParams.addParameter(new Parameters.ParametersParameterComponent()
+                            .setName("Gaps in Care Report - " + subjectName)
+                            .setResource(patientCareGap(periodStart, periodEnd, subjectName, topic, measure)));
+                }
+                return returnParams;
             }
-            return returnParams;
+            if (practitioner == null || practitioner.equals("")) {
+                return new Parameters().addParameter(
+                        new Parameters.ParametersParameterComponent()
+                                .setName("Gaps in Care Report - " + subject)
+                                .setResource(patientCareGap(periodStart, periodEnd, subject, topic, measure)));
+            }
         }
-        if (practitionerRef == null || practitionerRef.equals("")) {
-            return new Parameters().addParameter(
-                new Parameters.ParametersParameterComponent()
-                    .setName("Gaps in Care Report - " + subject)
-                    .setResource(patientCareGap(periodStart, periodEnd, subject, topic, measureName, measureList)));
-        }
-
-
-
         Parameters parameters = new Parameters();
-
         return parameters;
     }
 
-    private Bundle patientCareGap(String periodStart, String periodEnd, String subject, String topic, String measureName, String measureList) {
+    private Boolean careGapParameterValidation(String periodStart, String periodEnd, String subject, String topic,
+                                               String practitioner, String measure){
+        if(periodStart == null || periodStart.equals("") ||
+            periodEnd == null || periodEnd.equals("")){
+            throw new IllegalArgumentException("periodStart and periodEnd are required.");
+        }
         if (subject == null || subject.equals("")) {
             throw new IllegalArgumentException("Subject is required.");
         }
+        if (!subject.startsWith("Patient/") && !subject.startsWith("Group/")) {
+            throw new IllegalArgumentException("Subject must follow the format of either Patient/ID OR Group/ID.");
+        }
+        return true;
+    }
 
+    private Bundle patientCareGap(String periodStart, String periodEnd, String subject, String topic, String measure) {
         //TODO: this is an org hack.  Need to figure out what the right thing is.
         IFhirResourceDao<Organization> orgDao = this.registry.getResourceDao(Organization.class);
         var org = orgDao.search(new SearchParameterMap()).getResources(0, 1);
@@ -270,7 +272,7 @@ public class MeasureOperationsProvider {
             var topicParam = new TokenParam(topic);
             theParams.add("topic", topicParam);
         }
-        List<IBaseResource> measures = getMeasureList(theParams, measureName, measureList);
+        List<IBaseResource> measures = getMeasureList(theParams, measure);
 
         Bundle careGapReport = new Bundle();
         careGapReport.setType(Bundle.BundleType.DOCUMENT);
@@ -286,20 +288,20 @@ public class MeasureOperationsProvider {
 
         for (IBaseResource resource : measures) {
 
-            Measure measure = (Measure) resource;
+            Measure measureResource = (Measure) resource;
             Composition.SectionComponent section = new Composition.SectionComponent();
 
-            if (measure.hasTitle()) {
-                section.setTitle(measure.getTitle());
+            if (measureResource.hasTitle()) {
+                section.setTitle(measureResource.getTitle());
             }
 
             // TODO - this is configured for patient-level evaluation only
-            report = evaluateMeasure(measure.getIdElement(), periodStart, periodEnd, null, "patient", subject, null,
+            report = evaluateMeasure(measureResource.getIdElement(), periodStart, periodEnd, null, "patient", subject, null,
             null, null, null, null, null);
 
             report.setId(UUID.randomUUID().toString());
             report.setDate(new Date());
-            report.setImprovementNotation(measure.getImprovementNotation());
+            report.setImprovementNotation(measureResource.getImprovementNotation());
             //TODO: this is an org hack && requires an Organization to be in the ruler
             report.setReporter(new Reference("Organization/" + org.get(0).getIdElement().getIdPart()));
             report.setMeta(new Meta().addProfile("http://hl7.org/fhir/us/davinci-deqm/StructureDefinition/indv-measurereport-deqm"));
@@ -307,7 +309,7 @@ public class MeasureOperationsProvider {
             //TODO: DetectedIssue
             //section.addEntry(new Reference("MeasureReport/" + report.getId()));
 
-            if (report.hasGroup() && measure.hasScoring()) {
+            if (report.hasGroup() && measureResource.hasScoring()) {
                 int numerator = 0;
                 int denominator = 0;
                 for (MeasureReport.MeasureReportGroupComponent group : report.getGroup()) {
@@ -336,8 +338,8 @@ public class MeasureOperationsProvider {
                 //TODO: implement this per the spec
                 //Holding off on implementiation using Measure Score pending guidance re consideration for programs that don't perform the calculation (they just use numer/denom)
                 double proportion = 0.0;
-                if (measure.getScoring().hasCoding() && denominator != 0) {
-                    for (Coding coding : measure.getScoring().getCoding()) {
+                if (measureResource.getScoring().hasCoding() && denominator != 0) {
+                    for (Coding coding : measureResource.getScoring().getCoding()) {
                         if (coding.hasCode() && coding.getCode().equals("proportion")) {
                             if (denominator != 0.0 ) {
                                 proportion = numerator / denominator;
@@ -348,7 +350,7 @@ public class MeasureOperationsProvider {
 
                 // TODO - this is super hacky ... change once improvementNotation is specified
                 // as a code
-                String improvementNotation = measure.getImprovementNotation().getCodingFirstRep().getCode().toLowerCase();
+                String improvementNotation = measureResource.getImprovementNotation().getCodingFirstRep().getCode().toLowerCase();
                 if (
                     ((improvementNotation.equals("increase")) && (proportion < 1.0))
                         ||  ((improvementNotation.equals("decrease")) && (proportion > 0.0))) {
@@ -387,27 +389,17 @@ public class MeasureOperationsProvider {
         return careGapReport;
     }
 
-    private List<IBaseResource> getMeasureList(SearchParameterMap theParams, String measureName, String measureList){
-        if(null != measureName && measureName.length() > 0){
-            return this.measureResourceProvider
-                    .getDao()
-                    .search(theParams)
-                    .getResources(0, 1000)
-                    .stream()
-                    .filter(m -> ((Measure)m)
-                            .getName()
-                            .equalsIgnoreCase(measureName))
-                    .collect(Collectors.toList());
-        }else if(null != measureList && measureList.length() > 0){
+    private List<IBaseResource> getMeasureList(SearchParameterMap theParams, String measure){
+        if(null != measure && measure.length() > 0){
             List<IBaseResource> finalMeasureList = new ArrayList<>();
             List<IBaseResource> allMeasures = this.measureResourceProvider
                     .getDao()
                     .search(theParams)
                     .getResources(0, 1000);
-            for(String singleName: measureList.split(",")){
-                allMeasures.forEach(measure -> {
-                    if(((Measure)measure).getName().equalsIgnoreCase(singleName.trim())) {
-                        finalMeasureList.add(measure);
+            for(String singleName: measure.split(",")){
+                allMeasures.forEach(measureResource -> {
+                    if(((Measure)measureResource).getName().equalsIgnoreCase(singleName.trim())) {
+                        finalMeasureList.add(measureResource);
                     }
                 });
             }
