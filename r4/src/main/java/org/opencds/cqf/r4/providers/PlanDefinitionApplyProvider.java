@@ -226,6 +226,9 @@ public class PlanDefinitionApplyProvider {
                         result.setId(UUID.randomUUID().toString());
                     }
 
+                    // Add the result to the overall CarePlan contained as well
+                    session.getCarePlanBuilder().buildContained(result);
+
                     session
                         .getRequestGroupBuilder()
                         .buildContained(result)
