@@ -134,17 +134,6 @@ public class PlanDefinitionApplyProvider {
         return session.getCarePlan();
     }
 
-    public List<Resource> getAllContainedResources(Resource resource) {
-        if (!(resource instanceof DomainResource)) {
-            return new ArrayList<>();
-        }
-        List<Resource> contained = ((DomainResource) resource).getContained();
-
-        return Stream
-            .concat(contained.stream(), contained.stream().flatMap(r -> getAllContainedResources(r).stream()))
-            .collect(Collectors.toList());
-    }
-
     private void resolveAction(Session session, PlanDefinition.PlanDefinitionActionComponent action) {
         // TODO - Apply input/output dataRequirements?
         if (meetsConditions(session, action)) {
@@ -225,9 +214,6 @@ public class PlanDefinitionApplyProvider {
                                 action.getDefinitionCanonicalType().getId());
                         result.setId(UUID.randomUUID().toString());
                     }
-
-                    // Add the result to the overall CarePlan contained as well
-                    session.getCarePlanBuilder().buildContained(result);
 
                     session
                         .getRequestGroupBuilder()
