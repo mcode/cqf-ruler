@@ -119,11 +119,7 @@ public class PlanDefinitionApplyProvider {
 
     private CarePlan resolveActions(Session session) {
         for (PlanDefinition.PlanDefinitionActionComponent action : session.getPlanDefinition().getAction()) {
-            // TODO - Apply input/output dataRequirements?
-            if (meetsConditions(session, action)) {
-                resolveDefinition(session, action);
-                resolveDynamicActions(session, action);
-            }
+            resolveAction(session, action);
         }
 
         RequestGroup result = session.getRequestGroupBuilder().build();
@@ -136,6 +132,23 @@ public class PlanDefinitionApplyProvider {
             new CarePlanActivityBuilder().buildReference(new Reference("#" + result.getId())).build());
 
         return session.getCarePlan();
+    }
+
+    private void resolveAction(Session session, PlanDefinition.PlanDefinitionActionComponent action) {
+        // TODO - Apply input/output dataRequirements?
+        if (meetsConditions(session, action)) {
+            resolveDefinition(session, action);
+            resolveSubActions(session, action);
+            resolveDynamicActions(session, action);
+        }
+    }
+
+    private void resolveSubActions(Session session, PlanDefinition.PlanDefinitionActionComponent action) {
+        if (action.hasAction()) {
+            for (PlanDefinition.PlanDefinitionActionComponent subAction : action.getAction()) {
+               resolveAction(session, subAction); 
+            }
+        }
     }
 
     private void resolveDefinition(Session session, PlanDefinition.PlanDefinitionActionComponent action) {
