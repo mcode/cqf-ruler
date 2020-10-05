@@ -44,7 +44,7 @@ public class RequestGroupActionBuilder extends BaseBuilder<RequestGroup.RequestG
 
     public RequestGroupActionBuilder buildRelatedAction(
             List<PlanDefinition.PlanDefinitionActionRelatedActionComponent> planDefinitionRelatedActions) {
-        List<RequestGroup.RequestGroupActionRelatedActionComponent> requestGroupRelatedActions = new ArrayList<RequestGroup.RequestGroupActionRelatedActionComponent>();
+        List<RequestGroup.RequestGroupActionRelatedActionComponent> requestGroupRelatedActions = new ArrayList<>();
 
         // Copy each PlanDefinition.RelatedAction into RequestGroup.RelatedAction
         for (PlanDefinition.PlanDefinitionActionRelatedActionComponent planDefinitionRelatedAction : planDefinitionRelatedActions) {
