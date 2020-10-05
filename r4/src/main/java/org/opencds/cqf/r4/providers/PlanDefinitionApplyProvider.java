@@ -84,8 +84,7 @@ public class PlanDefinitionApplyProvider {
             @OperationParam(name = "userLanguage") String userLanguage,
             @OperationParam(name = "userTaskContext") String userTaskContext,
             @OperationParam(name = "setting") String setting,
-            @OperationParam(name = "settingContext") String settingContext)
-            throws IOException, FHIRException {
+            @OperationParam(name = "settingContext") String settingContext) throws IOException, FHIRException {
         PlanDefinition planDefinition = this.planDefinitionDao.read(theId);
 
         if (planDefinition == null) {
@@ -129,7 +128,7 @@ public class PlanDefinitionApplyProvider {
         }
 
         session.getCarePlanBuilder().buildContained(result).buildActivity(
-            new CarePlanActivityBuilder().buildReference(new Reference("#" + result.getId())).build());
+                new CarePlanActivityBuilder().buildReference(new Reference("#" + result.getId())).build());
 
         return session.getCarePlan();
     }
@@ -146,7 +145,7 @@ public class PlanDefinitionApplyProvider {
     private void resolveSubActions(Session session, PlanDefinition.PlanDefinitionActionComponent action) {
         if (action.hasAction()) {
             for (PlanDefinition.PlanDefinitionActionComponent subAction : action.getAction()) {
-               resolveAction(session, subAction); 
+                resolveAction(session, subAction);
             }
         }
     }
@@ -159,15 +158,9 @@ public class PlanDefinitionApplyProvider {
                 IdType id = new IdType(definition);
                 CarePlan plan;
                 try {
-                    plan = applyPlanDefinition(id,
-                            session.getPatientId(),
-                            session.getEncounterId(),
-                            session.getPractitionerId(),
-                            session.getOrganizationId(),
-                            session.getUserType(),
-                            session.getUserLanguage(),
-                            session.getUserTaskContext(),
-                            session.getSetting(),
+                    plan = applyPlanDefinition(id, session.getPatientId(), session.getEncounterId(),
+                            session.getPractitionerId(), session.getOrganizationId(), session.getUserType(),
+                            session.getUserLanguage(), session.getUserTaskContext(), session.getSetting(),
                             session.getSettingContext());
 
                     if (plan.getId() == null) {
@@ -175,15 +168,11 @@ public class PlanDefinitionApplyProvider {
                     }
 
                     // Add an action to the request group which points to this CarePlan
-                    session.getRequestGroupBuilder()
-                        .buildContained(plan)
-                        .addAction(new RequestGroupActionBuilder()
-                            .buildResource(new Reference("#" + plan.getId()))
-                            .build()
-                        );
+                    session.getRequestGroupBuilder().buildContained(plan)
+                            .addAction(new RequestGroupActionBuilder().buildResource(new Reference("#" + plan.getId()))
+                                    .buildRelatedAction(action.getRelatedAction()).build());
 
-                    for(CanonicalType c: plan.getInstantiatesCanonical())
-                    {
+                    for (CanonicalType c : plan.getInstantiatesCanonical()) {
                         session.getCarePlanBuilder().buildInstantiatesCanonical(c.getValueAsString());
                     }
 
@@ -215,13 +204,9 @@ public class PlanDefinitionApplyProvider {
                         result.setId(UUID.randomUUID().toString());
                     }
 
-                    session
-                        .getRequestGroupBuilder()
-                        .buildContained(result)
-                        .addAction(new RequestGroupActionBuilder()
-                            .buildResource(new Reference("#" + result.getId()))
-                            .build()
-                        );
+                    session.getRequestGroupBuilder().buildContained(result).addAction(
+                            new RequestGroupActionBuilder().buildResource(new Reference("#" + result.getId()))
+                                    .buildRelatedAction(action.getRelatedAction()).build());
 
                 } catch (Exception e) {
                     logger.error("ERROR: ActivityDefinition %s could not be applied and threw exception %s",
