@@ -51,9 +51,9 @@ public class RequestGroupActionBuilder extends BaseBuilder<RequestGroup.RequestG
             String relationshipCode = planDefinitionRelatedAction.getRelationship().toCode();
             RequestGroup.ActionRelationshipType relationship = RequestGroup.ActionRelationshipType
                     .fromCode(relationshipCode);
-            RequestGroup.RequestGroupActionRelatedActionComponent requestGroupRelatedAction = new RequestGroup.RequestGroupActionRelatedActionComponent();
-            requestGroupRelatedAction.setActionId(planDefinitionRelatedAction.getActionId());
-            requestGroupRelatedAction.setRelationship(relationship);
+            RequestGroup.RequestGroupActionRelatedActionComponent requestGroupRelatedAction = new RequestGroup.RequestGroupActionRelatedActionComponent()
+                    .setActionId(planDefinitionRelatedAction.getActionId())
+                    .setRelationship(relationship);
             requestGroupRelatedActions.add(requestGroupRelatedAction);
         }
         complexProperty.setRelatedAction(requestGroupRelatedActions);
