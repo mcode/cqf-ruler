@@ -1,10 +1,12 @@
 package org.opencds.cqf.r4.builders;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Extension;
+import org.hl7.fhir.r4.model.PlanDefinition;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.RelatedArtifact;
 import org.hl7.fhir.r4.model.RequestGroup;
@@ -37,6 +39,24 @@ public class RequestGroupActionBuilder extends BaseBuilder<RequestGroup.RequestG
 
     public RequestGroupActionBuilder buildDocumentation(List<RelatedArtifact> documentation) {
         complexProperty.setDocumentation(documentation);
+        return this;
+    }
+
+    public RequestGroupActionBuilder buildRelatedAction(
+            List<PlanDefinition.PlanDefinitionActionRelatedActionComponent> planDefinitionRelatedActions) {
+        List<RequestGroup.RequestGroupActionRelatedActionComponent> requestGroupRelatedActions = new ArrayList<>();
+
+        // Copy each PlanDefinition.RelatedAction into RequestGroup.RelatedAction
+        for (PlanDefinition.PlanDefinitionActionRelatedActionComponent planDefinitionRelatedAction : planDefinitionRelatedActions) {
+            String relationshipCode = planDefinitionRelatedAction.getRelationship().toCode();
+            RequestGroup.ActionRelationshipType relationship = RequestGroup.ActionRelationshipType
+                    .fromCode(relationshipCode);
+            RequestGroup.RequestGroupActionRelatedActionComponent requestGroupRelatedAction = new RequestGroup.RequestGroupActionRelatedActionComponent()
+                    .setActionId(planDefinitionRelatedAction.getActionId())
+                    .setRelationship(relationship);
+            requestGroupRelatedActions.add(requestGroupRelatedAction);
+        }
+        complexProperty.setRelatedAction(requestGroupRelatedActions);
         return this;
     }
 

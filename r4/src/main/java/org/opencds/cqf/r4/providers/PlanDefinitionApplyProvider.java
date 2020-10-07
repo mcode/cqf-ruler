@@ -179,6 +179,7 @@ public class PlanDefinitionApplyProvider {
                         .buildContained(plan)
                         .addAction(new RequestGroupActionBuilder()
                             .buildResource(new Reference("#" + plan.getId()))
+                            .buildRelatedAction(action.getRelatedAction())
                             .build()
                         );
 
@@ -220,6 +221,7 @@ public class PlanDefinitionApplyProvider {
                         .buildContained(result)
                         .addAction(new RequestGroupActionBuilder()
                             .buildResource(new Reference("#" + result.getId()))
+                            .buildRelatedAction(action.getRelatedAction())
                             .build()
                         );
 
